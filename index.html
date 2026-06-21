@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CK863 Coffee Scale WebBLE</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px 20px;
+        }
+        .card {
+            background: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+        h1 { font-size: 1.5rem; margin-top: 0; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        .display-area { margin-top: 30px; }
+        .weight { font-size: 3rem; font-weight: bold; color: #2c3e50; margin: 10px 0; }
+        .details { font-size: 1.2rem; color: #7f8c8d; }
+        .raw-data { 
+            margin-top: 20px; 
+            font-family: monospace; 
+            font-size: 0.8rem; 
+            background: #eee; 
+            padding: 10px; 
+            border-radius: 6px; 
+            word-wrap: break-word;
+        }
+        .status { margin-top: 15px; font-size: 0.9rem; color: #27ae60; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>CK863 BLE Interface</h1>
+    <button id="connectBtn">Connect to Scale</button>
+    <div id="status" class="status">Status: Disconnected</div>
+    
+    <div class="display-area">
+        <div class="details" id="modeDisplay">Mode: Unknown</div>
+        <div class="weight" id="weightDisplay">0.0 <span id="unitDisplay" style="font-size: 1.5rem;">g</span></div>
+        <div class="details" id="timerDisplay">Timer: 00:00</div>
+    </div>
+    
+    <div class="raw-data" id="rawDisplay">Raw Hex: --</div>
+</div>
+
+<script>
+    const connectBtn = document.getElementById('connectBtn');
+    const statusDiv = document.getElementById('status');
+    const weightDisplay = document.getElementById('weightDisplay');
+    const unitDisplay = document.getElementById('unitDisplay');
+    const modeDisplay = document.getElementById('modeDisplay');
+    const timerDisplay = document.getElementById('timerDisplay');
+    const rawDisplay = document.getElementById('rawDisplay');
+
+    // BLE UUIDs
+    const SERVICE_UUID = 0xFFF0;
+    const CHAR_NOTIFY_UUID = 0xFFF3;
+
+    // Unit Map
+    const unitMap = {
+        0x05: 'g',
+        0x08: 'ml',
+        0x0A: 'fl oz',
+        0x07: 'oz',
+        0x01: 'lb'
+    };
+
+    connectBtn.addEventListener('click', async () => {
+        try {
+            statusDiv.innerText = "Status: Requesting Bluetooth Device...";
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{ services: [SERVICE_UUID] }],
+                optionalServices: [SERVICE_UUID]
+            });
+
+            device.addEventListener('gattserverdisconnected', () => {
+                statusDiv.innerText = "Status: Disconnected";
+                connectBtn.disabled = false;
+            });
+
+            statusDiv.innerText = "Status: Connecting to GATT Server...";
+            const server = await device.gatt.connect();
+
+            statusDiv.innerText = "Status: Getting Service...";
+            const service = await server.getPrimaryService(SERVICE_UUID);
+
+            statusDiv.innerText = "Status: Getting Characteristic...";
+            const characteristic = await service.getCharacteristic(CHAR_NOTIFY_UUID);
+
+            statusDiv.innerText = "Status: Starting Notifications...";
+            await characteristic.startNotifications();
+            characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+            
+            statusDiv.innerText = "Status: Connected & Listening";
+            connectBtn.disabled = true;
+
+        } catch (error) {
+            console.error(error);
+            statusDiv.innerText = "Status: Error - " + error.message;
+        }
+    });
+
+    function handleCharacteristicValueChanged(event) {
+        const view = event.target.value;
+        const length = view.byteLength;
+        let hexString = '';
+        
+        // Convert raw data to hex string for debugging
+        for (let i = 0; i < length; i++) {
+            hexString += view.getUint8(i).toString(16).padStart(2, '0').toUpperCase() + ' ';
+        }
+        rawDisplay.innerText = `Raw Hex: ${hexString}`;
+
+        const header = view.getUint8(0);
+
+        // --- Standard Weighing Mode (Usually 8 bytes) ---
+        if (header === 0x12 && length >= 8) {
+            modeDisplay.innerText = "Mode: Standard";
+            
+            // Weight: Bytes 4 & 5 (Little-Endian, Signed Int to support negative tare)
+            const weightRaw = view.getInt16(4, true); 
+            const weight = (weightRaw / 10.0).toFixed(1);
+            
+            // Unit: Byte 6
+            const unitHex = view.getUint8(6);
+            const unit = unitMap[unitHex] || 'unknown';
+
+            weightDisplay.innerHTML = `${weight} <span style="font-size: 1.5rem;">${unit}</span>`;
+            timerDisplay.innerText = "Timer: --:--";
+        }
+        
+        // --- Espresso Mode (Usually 19 bytes) ---
+        else if (header === 0x14 && length >= 19) {
+            modeDisplay.innerText = "Mode: Espresso";
+            
+            // Unit: Byte 4
+            const unitHex = view.getUint8(4);
+            const unit = unitMap[unitHex] || 'unknown';
+
+            // Timer: Bytes 6 (Min) & 7 (Sec)
+            const min = view.getUint8(6).toString().padStart(2, '0');
+            const sec = view.getUint8(7).toString().padStart(2, '0');
+            
+            // Weight: Bytes 11 & 12 (Little-Endian, Signed Int)
+            const weightRaw = view.getInt16(11, true);
+            const weight = (weightRaw / 10.0).toFixed(1);
+
+            weightDisplay.innerHTML = `${weight} <span style="font-size: 1.5rem;">${unit}</span>`;
+            timerDisplay.innerText = `Timer: ${min}:${sec}`;
+        }
+    }
+</script>
+</body>
+</html>
