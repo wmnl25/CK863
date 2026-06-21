@@ -4,6 +4,9 @@ This repository documents the reverse-engineered Bluetooth Low Energy (BLE) prot
 
 Included is a vanilla JavaScript Web App (`index.html`) utilizing the **Web Bluetooth API** to connect to the scale and parse real-time data directly in the browser.
 
+<img width="200" height="200" alt="CK863" src="https://github.com/user-attachments/assets/d883b5d6-5c80-4621-9d55-b8ad81d0344f" />
+
+
 ## BLE Profile Overview
 
 The scale communicates its data via a custom (non-standardized) GATT Service and Characteristic.
