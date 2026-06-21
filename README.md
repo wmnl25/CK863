@@ -6,6 +6,10 @@ Included is a vanilla JavaScript Web App (`index.html`) utilizing the **Web Blue
 
 <img width="200" height="200" alt="CK863" src="https://github.com/user-attachments/assets/d883b5d6-5c80-4621-9d55-b8ad81d0344f" />
 
+## Try it yourself
+
+You can find the webapp <a href="https://wmnl25.github.io/CK863/" target="_BLANK">here</a>.
+
 
 ## BLE Profile Overview
 
