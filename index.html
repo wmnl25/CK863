@@ -94,7 +94,7 @@
         try {
             statusDiv.innerText = "Status: Requesting Bluetooth Device...";
             const device = await navigator.bluetooth.requestDevice({
-                filters: [{ services: [SERVICE_UUID] }],
+                filters: [{ name: 'CK863' }],
                 optionalServices: [SERVICE_UUID]
             });
 
