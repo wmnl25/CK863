@@ -134,10 +134,10 @@
         if (flowRate > 2.5) {
             adviceDisplay.innerText = "Flow is too fast. GRIND FINER. 🔽";
             adviceDisplay.style.color = "#e74c3c"; // Red
-        } else if (flowRate > 0.5 && flowRate < 1.0 && totalSeconds > 8) {
+        } else if (flowRate > 0.5 && flowRate < 1.5 && totalSeconds > 8) {
             adviceDisplay.innerText = "Flow is too slow. GRIND COARSER. 🔼";
             adviceDisplay.style.color = "#e74c3c"; // Red
-        } else if (flowRate >= 1.0 && flowRate <= 2.5) {
+        } else if (flowRate >= 1.5 && flowRate <= 2.5) {
             adviceDisplay.innerText = "Optimal extraction flow rate! ☕";
             adviceDisplay.style.color = "#27ae60"; // Green
         } else if (flowRate == 0) {
