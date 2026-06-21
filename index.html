@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CK863 Coffee Scale WebBLE</title>
+    <title>CK863 Espresso Profiler</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -38,8 +38,13 @@
         button:disabled { background-color: #ccc; cursor: not-allowed; }
         
         .display-area { margin-top: 30px; }
-        .weight { font-size: 3rem; font-weight: bold; color: #2c3e50; margin: 10px 0; }
-        .details { font-size: 1.2rem; color: #7f8c8d; }
+        .weight { font-size: 3.5rem; font-weight: bold; color: #2c3e50; margin: 10px 0; }
+        .details { font-size: 1.2rem; color: #7f8c8d; margin-bottom: 5px; }
+        
+        /* New Espresso UI Elements */
+        .flow-rate { font-size: 1.5rem; font-weight: bold; color: #34495e; margin: 15px 0; }
+        .advice { font-size: 1.1rem; font-weight: bold; padding: 10px; border-radius: 8px; margin-top: 10px; background: #f8f9fa; }
+        
         .raw-data { 
             margin-top: 20px; 
             font-family: monospace; 
@@ -55,14 +60,17 @@
 <body>
 
 <div class="card">
-    <h1>CK863 BLE Interface</h1>
+    <h1>CK863 Espresso Profiler</h1>
     <button id="connectBtn">Connect to Scale</button>
     <div id="status" class="status">Status: Disconnected</div>
     
     <div class="display-area">
         <div class="details" id="modeDisplay">Mode: Unknown</div>
-        <div class="weight" id="weightDisplay">0.0 <span id="unitDisplay" style="font-size: 1.5rem;">g</span></div>
         <div class="details" id="timerDisplay">Timer: 00:00</div>
+        <div class="weight" id="weightDisplay">0.0 <span id="unitDisplay" style="font-size: 1.5rem;">g</span></div>
+        
+        <div class="flow-rate" id="flowDisplay" style="display: none;">Flow: 0.0 g/s</div>
+        <div class="advice" id="adviceDisplay" style="display: none;">Waiting for flow...</div>
     </div>
     
     <div class="raw-data" id="rawDisplay">Raw Hex: --</div>
@@ -72,23 +80,71 @@
     const connectBtn = document.getElementById('connectBtn');
     const statusDiv = document.getElementById('status');
     const weightDisplay = document.getElementById('weightDisplay');
-    const unitDisplay = document.getElementById('unitDisplay');
     const modeDisplay = document.getElementById('modeDisplay');
     const timerDisplay = document.getElementById('timerDisplay');
     const rawDisplay = document.getElementById('rawDisplay');
+    
+    const flowDisplay = document.getElementById('flowDisplay');
+    const adviceDisplay = document.getElementById('adviceDisplay');
 
-    // BLE UUIDs
     const SERVICE_UUID = 0xFFF0;
     const CHAR_NOTIFY_UUID = 0xFFF3;
 
-    // Unit Map
-    const unitMap = {
-        0x05: 'g',
-        0x08: 'ml',
-        0x0A: 'fl oz',
-        0x07: 'oz',
-        0x01: 'lb'
-    };
+    const unitMap = { 0x05: 'g', 0x08: 'ml', 0x0A: 'fl oz', 0x07: 'oz', 0x01: 'lb' };
+
+    // Flow Calculation Variables
+    let flowHistory = [];
+    const FLOW_WINDOW_MS = 1500; // Look back 1.5 seconds to calculate smooth flow
+
+    function calculateFlowRate(currentWeight) {
+        const now = Date.now();
+        flowHistory.push({ time: now, weight: parseFloat(currentWeight) });
+        
+        // Drop data points older than our window
+        flowHistory = flowHistory.filter(item => (now - item.time) <= FLOW_WINDOW_MS);
+        
+        if (flowHistory.length < 2) return 0.0;
+        
+        const oldest = flowHistory[0];
+        const newest = flowHistory[flowHistory.length - 1];
+        
+        const timeDiffSec = (newest.time - oldest.time) / 1000;
+        if (timeDiffSec === 0) return 0.0;
+        
+        const weightDiff = newest.weight - oldest.weight;
+        const flow = weightDiff / timeDiffSec;
+        
+        return Math.max(0, flow).toFixed(1); // Ignore negative flow if cup is removed
+    }
+
+    function updateEspressoAdvice(flowRate, totalWeight, totalSeconds) {
+        flowDisplay.style.display = 'block';
+        adviceDisplay.style.display = 'block';
+        
+        flowDisplay.innerText = `Flow: ${flowRate} g/s`;
+
+        // Don't give advice during pre-infusion or when nothing is happening
+        if (totalWeight < 2.0 || totalSeconds < 2) {
+            adviceDisplay.innerText = "Waiting for steady flow...";
+            adviceDisplay.style.color = "#7f8c8d";
+            return;
+        }
+
+        // Generate Grinding Advice
+        if (flowRate > 2.5) {
+            adviceDisplay.innerText = "Flow is too fast. GRIND FINER. 🔽";
+            adviceDisplay.style.color = "#e74c3c"; // Red
+        } else if (flowRate > 0.5 && flowRate < 1.0 && totalSeconds > 8) {
+            adviceDisplay.innerText = "Flow is too slow. GRIND COARSER. 🔼";
+            adviceDisplay.style.color = "#e74c3c"; // Red
+        } else if (flowRate >= 1.0 && flowRate <= 2.5) {
+            adviceDisplay.innerText = "Optimal extraction flow rate! ☕";
+            adviceDisplay.style.color = "#27ae60"; // Green
+        } else if (flowRate == 0) {
+            adviceDisplay.innerText = "Shot finished.";
+            adviceDisplay.style.color = "#333";
+        }
+    }
 
     connectBtn.addEventListener('click', async () => {
         try {
@@ -103,16 +159,11 @@
                 connectBtn.disabled = false;
             });
 
-            statusDiv.innerText = "Status: Connecting to GATT Server...";
+            statusDiv.innerText = "Status: Connecting...";
             const server = await device.gatt.connect();
-
-            statusDiv.innerText = "Status: Getting Service...";
             const service = await server.getPrimaryService(SERVICE_UUID);
-
-            statusDiv.innerText = "Status: Getting Characteristic...";
             const characteristic = await service.getCharacteristic(CHAR_NOTIFY_UUID);
 
-            statusDiv.innerText = "Status: Starting Notifications...";
             await characteristic.startNotifications();
             characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
             
@@ -128,50 +179,43 @@
     function handleCharacteristicValueChanged(event) {
         const view = event.target.value;
         const length = view.byteLength;
-        let hexString = '';
-        
-        // Convert raw data to hex string for debugging
-        for (let i = 0; i < length; i++) {
-            hexString += view.getUint8(i).toString(16).padStart(2, '0').toUpperCase() + ' ';
-        }
-        rawDisplay.innerText = `Raw Hex: ${hexString}`;
-
         const header = view.getUint8(0);
 
-        // --- Standard Weighing Mode (Usually 8 bytes) ---
+        // --- Standard Weighing Mode ---
         if (header === 0x12 && length >= 8) {
             modeDisplay.innerText = "Mode: Standard";
+            flowDisplay.style.display = 'none';
+            adviceDisplay.style.display = 'none';
             
-            // Weight: Bytes 4 & 5 (Little-Endian, Signed Int to support negative tare)
             const weightRaw = view.getInt16(4, true); 
             const weight = (weightRaw / 10.0).toFixed(1);
-            
-            // Unit: Byte 6
-            const unitHex = view.getUint8(6);
-            const unit = unitMap[unitHex] || 'unknown';
+            const unit = unitMap[view.getUint8(6)] || 'unknown';
 
             weightDisplay.innerHTML = `${weight} <span style="font-size: 1.5rem;">${unit}</span>`;
             timerDisplay.innerText = "Timer: --:--";
+            
+            // Reset flow history when leaving espresso mode
+            flowHistory = [];
         }
         
-        // --- Espresso Mode (Usually 19 bytes) ---
+        // --- Espresso Mode ---
         else if (header === 0x14 && length >= 19) {
             modeDisplay.innerText = "Mode: Espresso";
             
-            // Unit: Byte 4
-            const unitHex = view.getUint8(4);
-            const unit = unitMap[unitHex] || 'unknown';
-
-            // Timer: Bytes 6 (Min) & 7 (Sec)
-            const min = view.getUint8(6).toString().padStart(2, '0');
-            const sec = view.getUint8(7).toString().padStart(2, '0');
+            const unit = unitMap[view.getUint8(4)] || 'unknown';
+            const min = view.getUint8(6);
+            const sec = view.getUint8(7);
+            const totalSeconds = (min * 60) + sec;
             
-            // Weight: Bytes 11 & 12 (Little-Endian, Signed Int)
             const weightRaw = view.getInt16(11, true);
             const weight = (weightRaw / 10.0).toFixed(1);
 
             weightDisplay.innerHTML = `${weight} <span style="font-size: 1.5rem;">${unit}</span>`;
-            timerDisplay.innerText = `Timer: ${min}:${sec}`;
+            timerDisplay.innerText = `Timer: ${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+
+            // Calculate Flow Rate and Display Advice
+            const currentFlowRate = calculateFlowRate(weight);
+            updateEspressoAdvice(currentFlowRate, parseFloat(weight), totalSeconds);
         }
     }
 </script>
