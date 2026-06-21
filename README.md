@@ -59,5 +59,8 @@ The unit byte translates as follows:
 3. Select your scale from the browser's pairing menu.
 4. The UI will instantly display the live weight, the active unit, and the timer (if in espresso mode).
 
+<img width="531" height="442" alt="Scherm­afbeelding 2026-06-21 om 12 50 49" src="https://github.com/user-attachments/assets/da658bb3-b8af-4807-aeea-51fb8ffdc72e" />
+
+
 ## Acknowledgments
 The mappings in this repository were discovered via manual byte-sniffing and reverse-engineering. Feel free to use this data to build your own ESP32, Raspberry Pi, or Home Assistant integrations. Pull requests mapping the TX commands (tare, start timer) on `0xFFF1` are welcome!
