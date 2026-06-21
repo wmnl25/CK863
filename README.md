@@ -1,6 +1,6 @@
 # CK863 / INSMART Smart Coffee Scale BLE Protocol
 
-This repository documents the reverse-engineered Bluetooth Low Energy (BLE) protocol for the CK863 smart coffee scale (often sold under the brand name INSMART). 
+This repository documents the reverse-engineered Bluetooth Low Energy (BLE) protocol for the CK863 smart coffee scale (often sold under the brand name INSMART, UNIQUE or LEFU). 
 
 Included is a vanilla JavaScript Web App (`index.html`) utilizing the **Web Bluetooth API** to connect to the scale and parse real-time data directly in the browser.
 
